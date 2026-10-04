@@ -1,0 +1,2 @@
+const {withAndroidManifest}=require('expo/config-plugins');
+module.exports=(config,options={})=>withAndroidManifest(config,c=>{const app=c.modResults.manifest.application[0];app.$['android:usesCleartextTraffic']=options.allowLocal?'true':'false';app.$['android:allowBackup']='false';c.modResults.manifest['uses-permission']=(c.modResults.manifest['uses-permission']||[]).filter(p=>!['android.permission.SYSTEM_ALERT_WINDOW','android.permission.READ_EXTERNAL_STORAGE','android.permission.WRITE_EXTERNAL_STORAGE'].includes(p.$['android:name']));return c;});

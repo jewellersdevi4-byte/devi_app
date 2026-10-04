@@ -1,0 +1,23 @@
+node_modules/
+.expo/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# Android
+android/app/build/
+android/.gradle/
+android/.cxx/
+android/local.properties
+android/app/release/
+android/app/debug/
+*.apk
+*.aab
+
+# macOS
+.DS_Store
