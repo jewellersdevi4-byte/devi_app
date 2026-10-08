@@ -63,10 +63,14 @@ git push -u origin main
 
 ### Customer payment sound alerts
 
-After signing in, enable **Payment sound alerts** and allow device notifications.
-The app checks the authenticated payment ledger every 15 seconds while the app is
-open and shows a sound notification for each newly confirmed, non-reversed payment,
-including customer, amount, and payment date. It stores a per-user payment ID cursor
-so already-seen entries do not alert again. The first check establishes a baseline.
-Background or closed-app alerts require a push-notification delivery service and
-are not included in this foreground polling feature.
+Payment alerts use Expo Push Notifications, so the backend worker can notify the
+Android device while the app is in the background or closed. Each alert includes
+the customer name, amount, and payment date, and uses the Android notification
+channel's default sound.
+
+Before building a release, create an Expo EAS project and set `EAS_PROJECT_ID` to
+its project ID. Configure Firebase Cloud Messaging v1 credentials for that EAS
+project, and set `GOOGLE_SERVICES_JSON` to the Firebase Android configuration
+file. Keep that file out of source control. Sign in, enable **Payment sound
+alerts**, and allow notifications on the device. The backend migration must be
+applied and its worker must be running for payment alerts to be delivered.

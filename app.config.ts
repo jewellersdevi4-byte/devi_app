@@ -8,7 +8,8 @@ export default {
     icon: './assets/icon.png',
     android: {
       package: 'in.devijewellers.owner',
-      versionCode: 1,
+      versionCode: 4,
+      ...(process.env.GOOGLE_SERVICES_JSON ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON } : {}),
       usesCleartextTraffic: process.env.DEVI_LOCAL_TEST === '1',
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
@@ -29,6 +30,7 @@ export default {
     ],
     extra: {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || '',
+      eas: { projectId: process.env.EAS_PROJECT_ID || '' },
     },
   },
 };

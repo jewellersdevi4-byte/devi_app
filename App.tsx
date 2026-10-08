@@ -1,8 +1,9 @@
-import React,{useEffect,useRef,useState} from 'react';
-import {AppState,View,Text,TextInput,Pressable,ScrollView,StyleSheet,Modal,ActivityIndicator,Alert,Switch,SafeAreaView,Platform,Share,Image} from 'react-native';
+import React,{useEffect,useState} from 'react';
+import {AppState,View,Text,TextInput,Pressable,ScrollView,StyleSheet,Modal,ActivityIndicator,Alert,Switch,SafeAreaView,Platform,Share,Image,Linking} from 'react-native';
 import * as Print from 'expo-print';import * as Sharing from 'expo-sharing';
 import * as SecureStore from 'expo-secure-store';import * as Crypto from 'expo-crypto';import {StatusBar} from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 Notifications.setNotificationHandler({handleNotification:async()=>({shouldShowBanner:true,shouldShowList:true,shouldPlaySound:true,shouldSetBadge:false})});
 type R=Record<string,any>;type Field={key:string;label:string;type?:'check'|'secret'|'select'|'long';options?:{label:string;value:string}[];value?:any};
 const money=(v:any)=>{const n=BigInt(v||0);return '₹'+(n/100n).toString()+'.'+String(n%100n).padStart(2,'0')};
@@ -13,8 +14,8 @@ const simple=(key:string,label:string,value=''):Field=>({key,label,value});
 function Button({title,onPress,secondary=false,disabled=false}:{title:string;onPress:()=>void;secondary?:boolean;disabled?:boolean}){return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.button,secondary&&styles.secondary,disabled&&{opacity:.5}]}><Text style={[styles.buttonText,secondary&&{color:'#193c34'}]}>{title}</Text></Pressable>}
 const DEFAULT_API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://backend.devijewellers.in';
 export default function App(){
- const [base,setBase]=useState(DEFAULT_API_BASE),[showServerConfig,setShowServerConfig]=useState(false),[token,setToken]=useState(''),[user,setUser]=useState<R|null>(null),[screen,setScreen]=useState('Dashboard'),[rows,setRows]=useState<any>(null),[detail,setDetail]=useState<R|null>(null),[form,setForm]=useState<R|null>(null),[values,setValues]=useState<R>({}),[picker,setPicker]=useState<Field|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[currentPassword,setCurrentPassword]=useState(''),[newPassword,setNewPassword]=useState(''),[confirmPassword,setConfirmPassword]=useState(''),[query,setQuery]=useState(''),[report,setReport]=useState('daily'),[from,setFrom]=useState(date().slice(0,7)+'-01'),[to,setTo]=useState(date()),[restoring,setRestoring]=useState(true),[pending,setPending]=useState<R|null>(null),[previewProofId,setPreviewProofId]=useState<string|null>(null),[paymentAlertsEnabled,setPaymentAlertsEnabled]=useState(false);
- const seenPaymentIds=useRef<Set<string>>(new Set()),paymentPollActive=useRef(false);
+ const [base,setBase]=useState(DEFAULT_API_BASE),[showServerConfig,setShowServerConfig]=useState(false),[token,setToken]=useState(''),[user,setUser]=useState<R|null>(null),[screen,setScreen]=useState('Dashboard'),[rows,setRows]=useState<any>(null),[detail,setDetail]=useState<R|null>(null),[form,setForm]=useState<R|null>(null),[values,setValues]=useState<R>({}),[picker,setPicker]=useState<Field|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[currentPassword,setCurrentPassword]=useState(''),[newPassword,setNewPassword]=useState(''),[confirmPassword,setConfirmPassword]=useState(''),[query,setQuery]=useState(''),[report,setReport]=useState('daily'),[from,setFrom]=useState(date().slice(0,7)+'-01'),[to,setTo]=useState(date()),[restoring,setRestoring]=useState(true),[pending,setPending]=useState<R|null>(null),[previewProofId,setPreviewProofId]=useState<string|null>(null),[paymentAlertsEnabled,setPaymentAlertsEnabled]=useState(false),[paymentAlertStatus,setPaymentAlertStatus]=useState('Waiting for sign-in');
+ const [pushRegistered,setPushRegistered]=useState(false),[pushRegistrationFinished,setPushRegistrationFinished]=useState(false);
   useEffect(()=>{(async()=>{try{const b=await SecureStore.getItemAsync('api_base');const t=await SecureStore.getItemAsync('session');const p=await SecureStore.getItemAsync('pending_write');const targetBase=(b&&!b.includes('10.0.2.2')&&!b.includes('localhost')&&!b.includes('devi-backend-57xn.onrender.com'))?b:DEFAULT_API_BASE;setBase(targetBase);if(p)setPending(JSON.parse(p));if(t){try{const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),3000);const r=await fetch(targetBase.replace(/\/$/,'')+'/api/v1/auth/me',{signal:ctrl.signal,headers:{Authorization:'Bearer '+t}});clearTimeout(tid);if(r.ok){setToken(t);setUser(await r.json())}}catch{setError('Cannot connect. Check your connection and sign in again.')}}}catch(_){}finally{setRestoring(false);}})();},[]);
  async function api(path:string,method='GET',payload?:unknown,key?:string,authToken=token){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),45000);let r:Response;try{r=await fetch((base||DEFAULT_API_BASE).replace(/\/$/,'')+'/api/v1'+path,{signal:controller.signal,method,headers:{...(payload!==undefined?{'Content-Type':'application/json'}:{}),...(authToken?{Authorization:'Bearer '+authToken}:{}),...(key?{'Idempotency-Key':key}:{})},...(payload!==undefined?{body:JSON.stringify(payload)}:{})});}finally{clearTimeout(timer);}const b=await r.json();if(!r.ok){const e:any=new Error(b.error||'Request failed');e.status=r.status;throw e;}return b;}
  async function job(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn()}catch(e:any){setError(e.message||'Connection interrupted. Retry to confirm the result.')}finally{setBusy(false)}}
@@ -44,52 +45,74 @@ export default function App(){
  },[user]);
  useEffect(()=>{if(screen!=='WhatsApp'||rows?.status==='connected')return;const timer=setInterval(()=>{api('/whatsapp/status').then(setRows).catch(()=>{});},3000);return ()=>clearInterval(timer);},[screen,rows?.status]);
  useEffect(()=>{if(!user?.id)return;SecureStore.getItemAsync('payment_alerts_enabled_'+user.id).then(v=>setPaymentAlertsEnabled(v==='true')).catch(()=>{});},[user?.id]);
+ useEffect(()=>{if(user?.id)void enablePaymentAlerts();},[user?.id]);
  useEffect(()=>{
-  if(!user?.id||!token)return;
+  if(!user?.id||!token||!paymentAlertsEnabled)return;
   let active=true;
-  const storageKey='seen_customer_payment_ids_'+user.id;
-  const pollPayments=async()=>{
-   if(!active||AppState.currentState!=='active'||paymentPollActive.current)return;
-   paymentPollActive.current=true;
+  setPushRegistrationFinished(false);setPushRegistered(false);
+  (async()=>{
    try{
-    const payments:R[]=await api('/payments');
-    if(!active)return;
-    const ordered=[...payments].sort((a,b)=>Date.parse(a.created_at)-Date.parse(b.created_at));
-    const saved=await SecureStore.getItemAsync(storageKey);
-    if(!saved){
-     const snapshot=ordered.map(p=>p.id).filter(Boolean).slice(-300);
-     seenPaymentIds.current=new Set(snapshot);
-     await SecureStore.setItemAsync(storageKey,JSON.stringify(snapshot));
-     return;
-    }
-    seenPaymentIds.current=new Set(JSON.parse(saved));
-    for(const payment of ordered){
-     if(!payment.id||seenPaymentIds.current.has(payment.id))continue;
-     seenPaymentIds.current.add(payment.id);
-     if(!payment.reversal_reason&&paymentAlertsEnabled){
-      const paidDate=new Intl.DateTimeFormat('en-IN',{dateStyle:'long',timeZone:'Asia/Kolkata'}).format(new Date(payment.payment_date+'T12:00:00+05:30'));
-      await Notifications.scheduleNotificationAsync({content:{title:'Customer payment received',body:`${payment.customer_name} paid ${money(payment.amount)} on ${paidDate}.`,sound:'default',...(Platform.OS==='android'?{channelId:'customer-payments'}:{})},trigger:null});
-     }
-    }
-    await SecureStore.setItemAsync(storageKey,JSON.stringify([...seenPaymentIds.current].slice(-300)));
-   }catch{}
-   finally{paymentPollActive.current=false;}
-  };
-  void pollPayments();
-  const timer=setInterval(()=>void pollPayments(),15000);
-  const subscription=AppState.addEventListener('change',state=>{if(state==='active')void pollPayments();});
-  return()=>{active=false;clearInterval(timer);subscription.remove();};
+    const permission=await Notifications.getPermissionsAsync();
+    if(!permission.granted)throw new Error('Allow notifications in Android settings');
+    const projectId=Constants.expoConfig?.extra?.eas?.projectId;
+    if(!projectId){setPaymentAlertStatus('Background alerts need the Expo project ID and Firebase push credentials.');if(active)setPushRegistrationFinished(true);return;}
+    const pushToken=(await Notifications.getExpoPushTokenAsync({projectId})).data;
+    const oldPushToken=await SecureStore.getItemAsync('expo_push_token_'+user.id);
+    if(oldPushToken&&oldPushToken!==pushToken)await api('/notifications/push-token','DELETE',{token:oldPushToken});
+    await api('/notifications/push-token','POST',{token:pushToken,platform:Platform.OS==='ios'?'ios':'android'});
+    await SecureStore.setItemAsync('expo_push_token_'+user.id,pushToken);
+    if(active){setPushRegistered(true);setPushRegistrationFinished(true);setPaymentAlertStatus('Background payment alerts are enabled with notification sound.');}
+   }catch(e:any){if(active){setPushRegistrationFinished(true);setPaymentAlertStatus('Background alerts could not register; app-open alerts remain active: '+(e?.message||'check connection and try again'));}}
+  })();
+  return()=>{active=false;};
  },[user?.id,token,paymentAlertsEnabled,base]);
+ useEffect(()=>{
+  if(!user?.id||!token||!paymentAlertsEnabled||!pushRegistrationFinished||pushRegistered)return;
+  let active=true;const storageKey='seen_customer_payment_ids_'+user.id;
+  const poll=async()=>{if(!active||AppState.currentState!=='active')return;try{
+   const payments:R[]=await api('/payments');if(!active)return;
+   const ordered=[...payments].sort((a,b)=>Date.parse(a.created_at)-Date.parse(b.created_at));
+   const saved=await SecureStore.getItemAsync(storageKey);
+   if(!saved){await SecureStore.setItemAsync(storageKey,JSON.stringify(ordered.map(p=>p.id).filter(Boolean).slice(-300)));return;}
+   const seen=new Set<string>(JSON.parse(saved));
+   for(const p of ordered){if(!p.id||seen.has(p.id))continue;seen.add(p.id);if(p.reversal_reason)continue;
+    const paidDate=new Intl.DateTimeFormat('en-IN',{dateStyle:'long',timeZone:'Asia/Kolkata'}).format(new Date(p.payment_date+'T12:00:00+05:30'));
+    await Notifications.scheduleNotificationAsync({content:{title:'Customer payment received',body:`${p.customer_name} paid ${money(p.amount)} on ${paidDate}.`,sound:'default',...(Platform.OS==='android'?{channelId:'customer-payments'}:{})},trigger:null});
+   }
+   await SecureStore.setItemAsync(storageKey,JSON.stringify([...seen].slice(-300)));
+  }catch{}}
+  void poll();const timer=setInterval(()=>void poll(),15000);const subscription=AppState.addEventListener('change',s=>{if(s==='active')void poll();});
+  return()=>{active=false;clearInterval(timer);subscription.remove();};
+ },[user?.id,token,paymentAlertsEnabled,pushRegistrationFinished,pushRegistered,base]);
  async function enablePaymentAlerts(){
   try{
    if(Platform.OS==='android')await Notifications.setNotificationChannelAsync('customer-payments',{name:'Customer payments',description:'Sound alerts when a customer payment is confirmed',importance:Notifications.AndroidImportance.HIGH,sound:'default',vibrationPattern:[0,250,150,250],enableVibrate:true});
    const current=await Notifications.getPermissionsAsync();
    const result=current.granted?current:await Notifications.requestPermissionsAsync();
-   if(!result.granted){Alert.alert('Notifications are disabled','Allow notifications for Devi Jewellers in your device settings to receive payment sound alerts.');return;}
+   if(!result.granted){Alert.alert('Notifications are disabled','Allow notifications for Devi Jewellers in device settings to receive payment pop-ups and sound alerts.',[{text:'Later',style:'cancel'},{text:'Open settings',onPress:()=>void Linking.openSettings()}]);return;}
    setPaymentAlertsEnabled(true);
    if(user?.id)await SecureStore.setItemAsync('payment_alerts_enabled_'+user.id,'true');
-   setNotice('Payment sound alerts enabled. New confirmed customer payments will appear here.');
+   setNotice('Payment sound alerts enabled. Registering this device for background payment notifications.');
   }catch{Alert.alert('Could not enable alerts','Please check notification permission in device settings and try again.');}
+ }
+ async function testPaymentAlert(){
+  try{
+   if(Platform.OS==='android')await Notifications.setNotificationChannelAsync('customer-payments',{name:'Customer payments',description:'Sound alerts when a customer payment is confirmed',importance:Notifications.AndroidImportance.HIGH,sound:'default',vibrationPattern:[0,250,150,250],enableVibrate:true});
+   const current=await Notifications.getPermissionsAsync();
+   const result=current.granted?current:await Notifications.requestPermissionsAsync();
+   if(!result.granted){Alert.alert('Notification permission needed','Enable notifications for Devi Jewellers in device settings, then tap Test notification again.',[{text:'Later',style:'cancel'},{text:'Open settings',onPress:()=>void Linking.openSettings()}]);return;}
+   await Notifications.scheduleNotificationAsync({content:{title:'Payment alert test',body:'Notifications are working. New customer payments will show their name and amount.',sound:'default',...(Platform.OS==='android'?{channelId:'customer-payments'}:{})},trigger:null});
+   setNotice('Test notification sent. Check the notification pop-up and sound.');
+  }catch(e:any){setPaymentAlertStatus('Test notification failed: '+(e?.message||'unknown error'));Alert.alert('Test notification failed',e?.message||'Check notification settings.');}
+ }
+ async function signOut(){
+  await job(async()=>{
+   if(user?.id){
+    const pushToken=await SecureStore.getItemAsync('expo_push_token_'+user.id);
+    if(pushToken){await api('/notifications/push-token','DELETE',{token:pushToken});await SecureStore.deleteItemAsync('expo_push_token_'+user.id);}
+   }
+   await api('/auth/logout','POST');await SecureStore.deleteItemAsync('session');setToken('');setUser(null);setRows(null);setDetail(null);
+  });
  }
  function show(title:string,fields:Field[],save:(v:R)=>Promise<void>){setError('');setForm({title,fields,save});setValues(Object.fromEntries(fields.map(f=>[f.key,f.value??(f.type==='check'?false:'')])));}
  async function customerForm(c?:R){
@@ -139,7 +162,7 @@ export default function App(){
  if(!user)return <SafeAreaView style={styles.root}><StatusBar style="dark"/><ScrollView contentContainerStyle={styles.login} keyboardShouldPersistTaps="handled"><Text style={styles.eyebrow}>DEVI JEWELLERS · KAUP</Text><Text style={styles.title}>Welcome back.</Text><Text style={styles.subtitle}>Owner & staff scheme manager</Text><Text style={styles.label}>Username</Text><TextInput style={styles.input} accessibilityLabel="Username" value={username} onChangeText={setUsername} autoCapitalize="none"/><Text style={styles.label}>Password</Text><TextInput style={styles.input} accessibilityLabel="Password" value={password} onChangeText={setPassword} secureTextEntry/>{showServerConfig?<View style={{marginVertical:6}}><Text style={styles.label}>Shop server URL</Text><TextInput style={styles.input} accessibilityLabel="Shop server URL" value={base} onChangeText={setBase} autoCapitalize="none" placeholder="https://backend.devijewellers.in"/></View>:<Pressable accessibilityRole="button" onPress={()=>setShowServerConfig(true)} style={{alignSelf:'flex-end',paddingVertical:6}}><Text style={[styles.hint,{color:'#8b6b35'}]}>⚙️ Server configuration</Text></Pressable>}{error?<Text accessibilityRole="alert" style={styles.error}>{error}</Text>:null}<Button title={busy?'Signing in…':'Sign in'} disabled={busy} onPress={()=>job(async()=>{const activeBase=base||DEFAULT_API_BASE;if(!/^https:\/\//.test(activeBase)&&!/^http:\/\/(10\.0\.2\.2|localhost|127\.0\.0\.1):\d+$/.test(activeBase))throw new Error('Use the secure HTTPS shop URL');const r=await api('/auth/login','POST',{username,password,native:true},undefined,'');await SecureStore.setItemAsync('api_base',activeBase);await SecureStore.setItemAsync('session',r.token);setToken(r.token);setUser(r.user);setPassword('')})}/><Text style={styles.hint}>Customers use WhatsApp. This app is only for authorised shop staff.</Text></ScrollView></SafeAreaView>;
  if(user?.mustChangePassword)return <SafeAreaView style={styles.root}><StatusBar style="dark"/><ScrollView contentContainerStyle={styles.login} keyboardShouldPersistTaps="handled"><Text style={styles.eyebrow}>SECURITY NOTICE</Text><Text style={styles.title}>Set permanent password</Text><Text style={styles.subtitle}>Your account was initialized with a temporary password. Choose a secure personal password of at least 12 characters to proceed.</Text><Text style={styles.label}>Current temporary password</Text><TextInput style={styles.input} accessibilityLabel="Current password" value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry autoCapitalize="none"/><Text style={styles.label}>New password (min 12 characters)</Text><TextInput style={styles.input} accessibilityLabel="New password" value={newPassword} onChangeText={setNewPassword} secureTextEntry autoCapitalize="none"/><Text style={styles.label}>Confirm new password</Text><TextInput style={styles.input} accessibilityLabel="Confirm new password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none"/>{error?<Text accessibilityRole="alert" style={styles.error}>{error}</Text>:null}<Button title={busy?'Updating password…':'Update password & continue'} disabled={busy} onPress={()=>job(async()=>{if(newPassword!==confirmPassword)throw new Error('New passwords do not match');if(newPassword.length<12)throw new Error('Password must be at least 12 characters');await api('/auth/change-password','POST',{currentPassword,newPassword});setUser({...user,mustChangePassword:false});setCurrentPassword('');setNewPassword('');setConfirmPassword('');setNotice('Password updated successfully. Welcome to your workspace!');})}/></ScrollView></SafeAreaView>;
  const screens=['Dashboard','Customers','Schemes','Payments','Payment proofs','Gold rates',...(owner?['WhatsApp']:[]),'Inbox','Messages','Reports',...(owner?['Staff','Audit','Settings']:[] )];
- return <SafeAreaView style={styles.root}><StatusBar style="dark"/><View style={styles.header}><Text style={styles.brand}>Devi Jewellers</Text><Pressable accessibilityRole="button" onPress={()=>job(async()=>{await api('/auth/logout','POST');await SecureStore.deleteItemAsync('session');setToken('');setUser(null);setRows(null);setDetail(null)})}><Text style={styles.link}>Sign out</Text></Pressable></View><View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.nav}>{screens.map(s=><Pressable key={s} accessibilityRole="button" onPress={()=>{setScreen(s);setDetail(null);setRows(null);setError('')}} style={[styles.navItem,screen===s&&styles.navActive]}><Text style={[styles.navText,screen===s&&{color:'white'}]}>{s}</Text></Pressable>)}</ScrollView></View><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"><Text style={styles.eyebrow}>OWNER WORKSPACE</Text><Text style={styles.title}>{detail?.kind==='account'?detail.number:detail?.kind==='customer'?detail.name:screen}</Text>{busy&&<ActivityIndicator/>}{error&&!form?<Text accessibilityRole="alert" style={styles.error}>{error}</Text>:null}{notice?<Text style={styles.notice}>{notice}</Text>:null}{pending&&<View style={styles.card}><Text style={styles.error}>A submission needs server confirmation. Keep this device’s saved retry key.</Text><Button title="Retry pending submission" disabled={busy} onPress={retryPending}/><Text style={styles.hint}>No local success is assumed. The same request key prevents duplicate records.</Text></View>}<Button title={paymentAlertsEnabled?"Payment sound alerts enabled":"Enable payment sound alerts"} onPress={enablePaymentAlerts} secondary disabled={busy}/><Text style={styles.hint}>New customer payments are checked while this app is open and notify with a sound.</Text><Button title="Refresh records" onPress={()=>job(refresh)} secondary disabled={busy}/>
+ return <SafeAreaView style={styles.root}><StatusBar style="dark"/><View style={styles.header}><Text style={styles.brand}>Devi Jewellers</Text><Pressable accessibilityRole="button" onPress={signOut}><Text style={styles.link}>Sign out</Text></Pressable></View><View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.nav}>{screens.map(s=><Pressable key={s} accessibilityRole="button" onPress={()=>{setScreen(s);setDetail(null);setRows(null);setError('')}} style={[styles.navItem,screen===s&&styles.navActive]}><Text style={[styles.navText,screen===s&&{color:'white'}]}>{s}</Text></Pressable>)}</ScrollView></View><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"><Text style={styles.eyebrow}>OWNER WORKSPACE</Text><Text style={styles.title}>{detail?.kind==='account'?detail.number:detail?.kind==='customer'?detail.name:screen}</Text>{busy&&<ActivityIndicator/>}{error&&!form?<Text accessibilityRole="alert" style={styles.error}>{error}</Text>:null}{notice?<Text style={styles.notice}>{notice}</Text>:null}{pending&&<View style={styles.card}><Text style={styles.error}>A submission needs server confirmation. Keep this device’s saved retry key.</Text><Button title="Retry pending submission" disabled={busy} onPress={retryPending}/><Text style={styles.hint}>No local success is assumed. The same request key prevents duplicate records.</Text></View>}<Button title={paymentAlertsEnabled?"Payment sound alerts enabled":"Enable payment sound alerts"} onPress={enablePaymentAlerts} secondary disabled={busy}/><Button title="Test notification pop-up" onPress={testPaymentAlert} secondary disabled={busy}/><Text accessibilityRole="summary" style={styles.hint}>{paymentAlertStatus}</Text><Text style={styles.hint}>Payment alerts arrive with sound even when the app is closed.</Text><Button title="Refresh records" onPress={()=>job(refresh)} secondary disabled={busy}/>
  {screen==='Dashboard'&&rows&&<><View style={styles.stats}>{[['Customers',rows.customers],['Active accounts',rows.activeAccounts],['This month',money(rows.collected)],['Due now',money(rows.outstanding)]].map(([k,v])=><View key={k} style={styles.stat}><Text style={styles.hint}>{k}</Text><Text style={styles.number}>{v}</Text></View>)}</View>{rows.openExceptions>0&&<View style={styles.card}><Text style={styles.error}>⚠️ {rows.openExceptions} payment(s) awaiting gold rate announcement or resolution.</Text><Button title="Resolve exceptions" onPress={async()=>{const ex=await api('/exceptions');const rates=await api('/rates');show('Resolve missing gold rate',[{key:'exceptionId',label:'Pending payment',type:'select',options:ex.filter((e:R)=>e.status==='open').map((e:R)=>({label:e.account_number+' · '+e.customer_name+' ('+money(e.amount)+')',value:e.id}))},{key:'rateId',label:'Applicable gold rate',type:'select',options:rates.map((r:R)=>({label:r.purity+' · '+money(r.paise_per_gram)+' ('+new Date(r.effective_at).toLocaleDateString()+')',value:r.id}))}],async v=>{if(!v.exceptionId||!v.rateId)throw new Error('Select both exception and rate');await api('/exceptions/'+v.exceptionId+'/resolve-rate','POST',{rateId:v.rateId});setNotice('Exception resolved and gold allocated.');});}}/></View>}{rows.adapter!=='meta'&&<Text style={styles.warning}>Isolated test messaging. No WhatsApp delivery.</Text>}<Button title="Record payment" onPress={()=>paymentForm()}/><Button title="Register customer" secondary onPress={()=>customerForm()}/><View style={styles.card}><Text style={styles.label}>Needs attention</Text><Text style={styles.body}>{rows.nearingCompletion} accounts nearing completion</Text><Text style={styles.body}>{rows.failedMessages} failed / uncertain messages</Text></View></>}
  {screen==='Customers'&&!detail&&<><TextInput style={styles.input} accessibilityLabel="Search customers" value={query} onChangeText={setQuery} placeholder="Name, mobile or customer ID"/><Button title="Search" onPress={()=>job(refresh)} secondary/><Button title="Register customer" onPress={()=>customerForm()}/>{(rows||[]).map((c:R)=><Pressable key={c.id} style={styles.card} accessibilityRole="button" onPress={()=>job(async()=>setDetail({...await api('/customers/'+c.id),kind:'customer'}))}><Text style={styles.cardTitle}>{c.name}</Text><Text style={styles.body}>{c.number} · {c.mobile}</Text><Text style={styles.hint}>{c.accounts} accounts · {c.consent?'WhatsApp opted in':'No opt-in'}</Text></Pressable>)}</>}
   {detail?.kind==='customer'&&<><Button title="Back to customers" secondary onPress={()=>setDetail(null)}/><View style={styles.card}><Text style={styles.body}>{detail.mobile} / {detail.whatsapp}</Text><Text style={styles.body}>{detail.address}</Text><Text style={styles.hint}>{detail.consent?'Opted in':'Not opted in'} · {detail.consent_method}</Text><Button title="Edit customer" secondary onPress={()=>customerForm(detail)}/>{owner&&<Button title="Delete customer" secondary onPress={()=>deleteCustomer(detail)}/>}</View><Button title="Enrol in confirmed scheme" onPress={enrolForm}/>{detail.accounts.map((a:R)=><Pressable accessibilityRole="button" key={a.id} style={styles.card} onPress={()=>job(async()=>setDetail({...await api('/accounts/'+a.id),kind:'account'}))}><Text style={styles.cardTitle}>{a.number}</Text><Text style={styles.body}>{a.scheme_name} · {a.status}</Text><Text style={styles.body}>Paid {money(a.totalPaid)} · Due {money(a.dueNow)}</Text></Pressable>)}<Text style={styles.section}>WhatsApp history</Text>{detail.messages.map((m:R)=><View style={styles.card} key={m.id}><Text>{m.kind} · {m.status}</Text><Text style={styles.hint}>{new Date(m.created_at).toLocaleString()}</Text></View>)}</>}
