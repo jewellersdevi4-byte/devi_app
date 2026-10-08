@@ -60,3 +60,13 @@ git remote add origin https://github.com/<your-org>/devi_app.git
 git branch -M main
 git push -u origin main
 ```
+
+### Customer payment sound alerts
+
+After signing in, enable **Payment sound alerts** and allow device notifications.
+The app checks the authenticated payment ledger every 15 seconds while the app is
+open and shows a sound notification for each newly confirmed, non-reversed payment,
+including customer, amount, and payment date. It stores a per-user payment ID cursor
+so already-seen entries do not alert again. The first check establishes a baseline.
+Background or closed-app alerts require a push-notification delivery service and
+are not included in this foreground polling feature.

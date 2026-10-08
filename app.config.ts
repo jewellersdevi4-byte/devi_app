@@ -21,6 +21,7 @@ export default {
     plugins: [
       'expo-secure-store',
       'expo-sharing',
+      ['expo-notifications', { defaultChannel: 'customer-payments', enableBackgroundRemoteNotifications: false }],
       [
         './plugins/withNetworkPolicy.cjs',
         { allowLocal: process.env.DEVI_LOCAL_TEST === '1' },
