@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "932713907279",
+    "project_id": "devi-jewellers",
+    "storage_bucket": "devi-jewellers.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:932713907279:android:96bc01921940de1b47963a",
+        "android_client_info": {
+          "package_name": "in.devijewellers.owner"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAF_0kXeXx8OnhOllB3GbdIObsssHB7YlU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

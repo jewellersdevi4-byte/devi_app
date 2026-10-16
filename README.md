@@ -74,3 +74,25 @@ project, and set `GOOGLE_SERVICES_JSON` to the Firebase Android configuration
 file. Keep that file out of source control. Sign in, enable **Payment sound
 alerts**, and allow notifications on the device. The backend migration must be
 applied and its worker must be running for payment alerts to be delivered.
+
+
+### Background payment alert release check
+
+The API now runs a separate payment push loop when `RUN_EMBEDDED_WORKER` is not
+`false`. If disabled, run `npm run worker` as a continuously running service.
+Apply backend migrations (including 012) before deployment. WhatsApp delivery
+must not block payment push processing.
+
+This checkout is missing the Expo project ID and Firebase Android config. Before
+building, set `EAS_PROJECT_ID` and `GOOGLE_SERVICES_JSON` in the build environment,
+configure FCM v1 credentials for that Expo project, and regenerate Android native
+configuration with `npx expo prebuild --platform android --no-install`. Review the
+native diff and build/install a new signed APK. Existing APKs do not acquire
+Firebase configuration from a backend deployment.
+
+Sign in and confirm device registration. Test a confirmed payment while the admin
+app is backgrounded and the phone is locked, then with the app swiped away. Check
+push tickets/receipts and actual phone delivery. Android force-stop blocks delivery
+until the app is reopened. The local notification test verifies sound/pop-up only;
+it does not verify the server, FCM, or background delivery. Do not mark this release
+verified until a real phone receives the payment without reopening the app.
