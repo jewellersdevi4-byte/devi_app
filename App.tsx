@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {AppState,View,Text,TextInput,Pressable,ScrollView,StyleSheet,Modal,ActivityIndicator,Alert,Switch,SafeAreaView,Platform,Share,Image,Linking} from 'react-native';
 import * as Print from 'expo-print';import * as Sharing from 'expo-sharing';
 import * as SecureStore from 'expo-secure-store';import * as Crypto from 'expo-crypto';import {StatusBar} from 'expo-status-bar';
@@ -16,7 +16,7 @@ const DEFAULT_API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://backend.dev
 export default function App(){
  const [base,setBase]=useState(DEFAULT_API_BASE),[showServerConfig,setShowServerConfig]=useState(false),[token,setToken]=useState(''),[user,setUser]=useState<R|null>(null),[screen,setScreen]=useState('Dashboard'),[rows,setRows]=useState<any>(null),[detail,setDetail]=useState<R|null>(null),[form,setForm]=useState<R|null>(null),[values,setValues]=useState<R>({}),[picker,setPicker]=useState<Field|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[currentPassword,setCurrentPassword]=useState(''),[newPassword,setNewPassword]=useState(''),[confirmPassword,setConfirmPassword]=useState(''),[query,setQuery]=useState(''),[report,setReport]=useState('daily'),[from,setFrom]=useState(date().slice(0,7)+'-01'),[to,setTo]=useState(date()),[restoring,setRestoring]=useState(true),[pending,setPending]=useState<R|null>(null),[previewProofId,setPreviewProofId]=useState<string|null>(null),[paymentAlertsEnabled,setPaymentAlertsEnabled]=useState(false),[paymentAlertStatus,setPaymentAlertStatus]=useState('Waiting for sign-in');
  const [pushRegistered,setPushRegistered]=useState(false),[pushRegistrationFinished,setPushRegistrationFinished]=useState(false);
-  useEffect(()=>{(async()=>{try{const b=await SecureStore.getItemAsync('api_base');const t=await SecureStore.getItemAsync('session');const p=await SecureStore.getItemAsync('pending_write');const targetBase=(b&&!b.includes('10.0.2.2')&&!b.includes('localhost')&&!b.includes('devi-backend-57xn.onrender.com'))?b:DEFAULT_API_BASE;setBase(targetBase);if(p)setPending(JSON.parse(p));if(t){try{const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),3000);const r=await fetch(targetBase.replace(/\/$/,'')+'/api/v1/auth/me',{signal:ctrl.signal,headers:{Authorization:'Bearer '+t}});clearTimeout(tid);if(r.ok){setToken(t);setUser(await r.json())}}catch{setError('Cannot connect. Check your connection and sign in again.')}}}catch(_){}finally{setRestoring(false);}})();},[]);
+  useEffect(()=>{(async()=>{try{const b=await SecureStore.getItemAsync('api_base');const t=await SecureStore.getItemAsync('session');const p=await SecureStore.getItemAsync('pending_write');const targetBase=(b&&!b.includes('10.0.2.2')&&!b.includes('localhost')&&!b.includes('devi-backend-57xn.onrender.com'))?b:DEFAULT_API_BASE;setBase(targetBase);if(p)setPending(JSON.parse(p));if(t){try{const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),15000);const r=await fetch(targetBase.replace(/\/$/,'')+'/api/v1/auth/me',{signal:ctrl.signal,headers:{Authorization:'Bearer '+t}});clearTimeout(tid);if(r.ok){setToken(t);setUser(await r.json())}}catch{setError('Cannot connect. Check your connection and sign in again.')}}}catch(_){}finally{setRestoring(false);}})();},[]);
  async function api(path:string,method='GET',payload?:unknown,key?:string,authToken=token){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),45000);let r:Response;try{r=await fetch((base||DEFAULT_API_BASE).replace(/\/$/,'')+'/api/v1'+path,{signal:controller.signal,method,headers:{...(payload!==undefined?{'Content-Type':'application/json'}:{}),...(authToken?{Authorization:'Bearer '+authToken}:{}),...(key?{'Idempotency-Key':key}:{})},...(payload!==undefined?{body:JSON.stringify(payload)}:{})});}finally{clearTimeout(timer);}const b=await r.json();if(!r.ok){const e:any=new Error(b.error||'Request failed');e.status=r.status;throw e;}return b;}
  async function job(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn()}catch(e:any){setError(e.message||'Connection interrupted. Retry to confirm the result.')}finally{setBusy(false)}}
  async function financial(path:string,payload:R,method='POST'){
@@ -27,8 +27,9 @@ export default function App(){
  }
  async function receipt(id:string){await job(async()=>{const r=await fetch(base+'/api/v1/receipts/'+id,{headers:{Authorization:'Bearer '+token}});if(!r.ok)throw new Error('Receipt could not be loaded');const out=await Print.printToFileAsync({html:await r.text()});await Sharing.shareAsync(out.uri,{mimeType:'application/pdf',dialogTitle:'Devi Jewellers receipt'});});}
  async function retryPending(){if(!pending)return;await job(async()=>{await api(pending.path,pending.method,pending.payload,pending.key);await SecureStore.deleteItemAsync('pending_write');setPending(null);setNotice('The server confirmed the saved record.');await refresh()});}
- async function refresh(){const paths:R={Dashboard:'/dashboard',Customers:'/customers?q='+encodeURIComponent(query),Schemes:'/schemes',Payments:'/payments','Payment proofs':'/payment-proofs','Gold rates':'/rates',WhatsApp:'/whatsapp/status',Inbox:'/inbox',Messages:'/messages',Reports:`/reports/${report}?from=${from}&to=${to}`,Staff:'/staff',Audit:'/audit',Settings:'/settings'};setRows(await api(paths[screen]));if(detail?.kind==='customer')setDetail({...await api('/customers/'+detail.id),kind:'customer'});if(detail?.kind==='account')setDetail({...await api('/accounts/'+detail.id),kind:'account'});if(detail?.kind==='conversation')setDetail({...await api('/inbox/'+detail.conversation.id),kind:'conversation'});}
- useEffect(()=>{if(user)job(refresh)},[user,screen,report]);
+ const activeView=useRef('');const refreshSequence=useRef(0);const viewKey=`${token}:${screen}:${report}`;activeView.current=viewKey;
+ async function refresh(){const sequence=++refreshSequence.current;const currentView=viewKey;const paths:R={Dashboard:'/dashboard',Customers:'/customers?q='+encodeURIComponent(query),Schemes:'/schemes',Payments:'/payments','Payment proofs':'/payment-proofs','Gold rates':'/rates',WhatsApp:'/whatsapp/status',Inbox:'/inbox',Messages:'/messages',Reports:`/reports/${report}?from=${from}&to=${to}`,Staff:'/staff',Audit:'/audit',Settings:'/settings'};const detailPath=detail?.kind==='customer'?'/customers/'+detail.id:detail?.kind==='account'?'/accounts/'+detail.id:detail?.kind==='conversation'?'/inbox/'+detail.conversation.id:null;const [nextRows,nextDetail]=await Promise.all([api(paths[screen]),detailPath?api(detailPath):null]);if(sequence!==refreshSequence.current||activeView.current!==currentView)return;setRows(nextRows);if(nextDetail)setDetail({...nextDetail,kind:detail!.kind});}
+ useEffect(()=>{setRows(null);if(user)job(refresh)},[user,screen,report]);
  useEffect(()=>{
   if(user?.role==='owner'){
    api('/rates').then((ratesList:any[])=>{
@@ -43,7 +44,7 @@ export default function App(){
    }).catch(()=>{});
   }
  },[user]);
- useEffect(()=>{if(screen!=='WhatsApp'||rows?.status==='connected')return;const timer=setInterval(()=>{api('/whatsapp/status').then(setRows).catch(()=>{});},3000);return ()=>clearInterval(timer);},[screen,rows?.status]);
+ useEffect(()=>{if(!user||screen!=='WhatsApp')return;let active=true;let inFlight=false;const timer=setInterval(async()=>{if(!active||inFlight||AppState.currentState!=='active')return;inFlight=true;try{const value=await api('/whatsapp/status');if(active)setRows(value);}catch{}finally{inFlight=false;}},3000);return ()=>{active=false;clearInterval(timer);};},[user,screen]);
 
  useEffect(()=>{if(user?.id)void enablePaymentAlerts();},[user?.id]);
  useEffect(()=>{
@@ -75,9 +76,9 @@ export default function App(){
  },[user?.id,token,paymentAlertsEnabled,base]);
  useEffect(()=>{
   if(!user?.id||!token||!paymentAlertsEnabled||!pushRegistrationFinished||pushRegistered)return;
-  let active=true;const storageKey='seen_customer_payment_ids_'+user.id;
-  const poll=async()=>{if(!active||AppState.currentState!=='active')return;try{
-   const payments:R[]=await api('/payments');if(!active)return;
+  let active=true;let inFlight=false;const storageKey='seen_customer_payment_ids_'+user.id;
+  const poll=async()=>{if(!active||inFlight||AppState.currentState!=='active')return;inFlight=true;try{
+   const payments:R[]=await api('/payments/alerts');if(!active)return;
    const ordered=[...payments].sort((a,b)=>Date.parse(a.created_at)-Date.parse(b.created_at));
    const saved=await SecureStore.getItemAsync(storageKey);
    if(!saved){await SecureStore.setItemAsync(storageKey,JSON.stringify(ordered.map(p=>p.id).filter(Boolean).slice(-300)));return;}
@@ -87,7 +88,7 @@ export default function App(){
     await Notifications.scheduleNotificationAsync({content:{title:'Customer payment received',body:`${p.customer_name} paid ${money(p.amount)} on ${paidDate}.`,sound:'default',...(Platform.OS==='android'?{channelId:'customer-payments'}:{})},trigger:null});
    }
    await SecureStore.setItemAsync(storageKey,JSON.stringify([...seen].slice(-300)));
-  }catch{}}
+  }catch{}finally{inFlight=false;}}
   void poll();const timer=setInterval(()=>void poll(),15000);const subscription=AppState.addEventListener('change',s=>{if(s==='active')void poll();});
   return()=>{active=false;clearInterval(timer);subscription.remove();};
  },[user?.id,token,paymentAlertsEnabled,pushRegistrationFinished,pushRegistered,base]);
