@@ -2,14 +2,14 @@ export default {
   expo: {
     name: 'Devi Jewellers',
     slug: 'devi-jewellers-owner',
-    version: '1.0.0',
+    version: '1.0.1',
     orientation: 'portrait',
     userInterfaceStyle: 'light',
     icon: './assets/icon.png',
     android: {
       package: 'in.devijewellers.owner',
-      versionCode: 4,
-      ...(process.env.GOOGLE_SERVICES_JSON ? { googleServicesFile: process.env.GOOGLE_SERVICES_JSON } : {}),
+      versionCode: 6,
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json',
       usesCleartextTraffic: process.env.DEVI_LOCAL_TEST === '1',
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
@@ -30,7 +30,7 @@ export default {
     ],
     extra: {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || '',
-      eas: { projectId: process.env.EAS_PROJECT_ID || '' },
+      eas: { projectId: process.env.EAS_PROJECT_ID || '992a3ef1-36cb-4b6a-88d3-7698e900e7ad' },
     },
   },
 };
